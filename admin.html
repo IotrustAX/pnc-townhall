@@ -35,6 +35,7 @@
     border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #9aa; cursor: pointer;
   }
   .file-input.has-file { color: #cde; border-style: solid; border-color: #2F7A7A; }
+  .file-input.dragover { border-color: #7fd1c5; background: #17241f; color: #cde; }
 
   button.ghost {
     background: transparent; border: 1px dashed #3a4049; color: #9aa; border-radius: 8px;
@@ -102,7 +103,7 @@
         '<button type="button" class="remove" title="삭제">✕</button>' +
       '</div>' +
       '<label class="file-input">' +
-        '<span class="file-label">파일 선택 (PDF 또는 HTML)</span>' +
+        '<span class="file-label">클릭해서 선택하거나, 파일을 끌어다 놓으세요</span>' +
         '<input type="file" accept=".pdf,.html" class="speaker-file" style="display:none">' +
       '</label>';
 
@@ -112,13 +113,32 @@
     });
     const fileLabel = row.querySelector('.file-input');
     const fileInput = row.querySelector('.speaker-file');
-    fileInput.addEventListener('change', () => {
+
+    function updateFileLabel() {
       if (fileInput.files[0]) {
         fileLabel.classList.add('has-file');
         fileLabel.querySelector('.file-label').textContent = fileInput.files[0].name;
       } else {
         fileLabel.classList.remove('has-file');
-        fileLabel.querySelector('.file-label').textContent = '파일 선택 (PDF 또는 HTML)';
+        fileLabel.querySelector('.file-label').textContent = '클릭해서 선택하거나, 파일을 끌어다 놓으세요';
+      }
+    }
+    fileInput.addEventListener('change', updateFileLabel);
+
+    // 드래그앤드롭으로도 파일을 올릴 수 있게 한다.
+    fileLabel.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      fileLabel.classList.add('dragover');
+    });
+    fileLabel.addEventListener('dragleave', () => {
+      fileLabel.classList.remove('dragover');
+    });
+    fileLabel.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileLabel.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) {
+        fileInput.files = e.dataTransfer.files;
+        updateFileLabel();
       }
     });
 
@@ -130,6 +150,10 @@
       row.querySelector('.num').textContent = idx + 1;
     });
   }
+
+  // 드롭 영역 밖에 파일을 떨어뜨리면 브라우저가 그 파일을 새로 열어버리는 것을 막는다.
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
 
   addSpeakerBtn.addEventListener('click', addSpeakerRow);
   addSpeakerRow();
