@@ -92,13 +92,19 @@
   const emptyMsg = document.getElementById('empty-msg');
   const stage = document.getElementById('stage');
 
-  function resolveSrc(file) {
+  // enterFromEnd: 이전 연사에서 "뒤로" 넘어온 경우, PDF는 마지막 페이지부터 보여준다.
+  // (커스텀 HTML 자료는 내부 구조를 몰라 안전하게 강제할 수 없어 대상에서 뺌 — 처음부터 보임)
+  function resolveSrc(file, enterFromEnd) {
     const ext = file.split('.').pop().toLowerCase();
-    if (ext === 'pdf') return 'pdf-viewer.html?file=' + encodeURIComponent(file);
+    if (ext === 'pdf') {
+      let url = 'pdf-viewer.html?file=' + encodeURIComponent(file);
+      if (enterFromEnd) url += '&start=last';
+      return url;
+    }
     return file;
   }
 
-  function render() {
+  function render(enterFromEnd) {
     if (SPEAKERS.length === 0) {
       stage.style.display = 'none';
       emptyMsg.style.display = 'flex';
@@ -109,7 +115,7 @@
       return;
     }
     const s = SPEAKERS[idx];
-    const src = resolveSrc(s.file);
+    const src = resolveSrc(s.file, enterFromEnd);
     frame.src = src;
     nameText.textContent = s.name;
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
@@ -118,10 +124,10 @@
   }
 
   function goNext() {
-    if (idx < SPEAKERS.length - 1) { idx++; render(); }
+    if (idx < SPEAKERS.length - 1) { idx++; render(false); }
   }
   function goPrev() {
-    if (idx > 0) { idx--; render(); }
+    if (idx > 0) { idx--; render(true); }
   }
 
   prevBtn.addEventListener('click', goPrev);

@@ -25,7 +25,9 @@
 <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../../pdf.worker.min.js';
 
-  const fileParam = new URLSearchParams(location.search).get('file');
+  const params = new URLSearchParams(location.search);
+  const fileParam = params.get('file');
+  const startLast = params.get('start') === 'last';
   const wrap = document.getElementById('canvas-wrap');
   const pageInfo = document.getElementById('pageInfo');
   const loading = document.getElementById('loading');
@@ -71,6 +73,7 @@
   } else {
     pdfjsLib.getDocument(fileParam).promise.then((doc) => {
       pdfDoc = doc;
+      if (startLast) pageNum = pdfDoc.numPages;
       loading.style.display = 'none';
       renderPage(pageNum);
     }).catch((err) => {
