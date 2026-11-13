@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>발표자료 통합 상영</title>
+<title>타운홀미팅 발표자료</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8F%9B%EF%B8%8F</text></svg>">
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
   #stage { position: fixed; inset: 0; }
@@ -54,6 +55,7 @@
 -->
 <script>
   const SPEAKERS = [
+    { name: "시작 전 안내", file: "speakers/intro.html" },
     { name: "황원태 · 최승주", file: "speakers/speaker1.html" },
     { name: "김완규", file: "speakers/speaker2.pdf" },
     { name: "유민호", file: "speakers/speaker3.pdf" },
@@ -90,6 +92,12 @@
   const emptyMsg = document.getElementById('empty-msg');
   const stage = document.getElementById('stage');
 
+  function resolveSrc(file) {
+    const ext = file.split('.').pop().toLowerCase();
+    if (ext === 'pdf') return 'pdf-viewer.html?file=' + encodeURIComponent(file);
+    return file;
+  }
+
   function render() {
     if (SPEAKERS.length === 0) {
       stage.style.display = 'none';
@@ -101,7 +109,7 @@
       return;
     }
     const s = SPEAKERS[idx];
-    frame.src = s.file;
+    frame.src = resolveSrc(s.file);
     nameText.textContent = s.name;
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
     prevBtn.disabled = idx === 0;
