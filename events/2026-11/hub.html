@@ -32,9 +32,26 @@
   #bar button:disabled { background: #555; color: #999; cursor: default; }
   #bar button:hover:not(:disabled) { background: #e5e5e5; }
 
-  #label { min-width: 160px; text-align: center; white-space: nowrap; }
+  #label { min-width: 160px; text-align: center; white-space: nowrap; cursor: pointer; border-radius: 10px; padding: 4px 8px; }
+  #label:hover { background: rgba(255,255,255,0.08); }
   #label .name { font-weight: 700; }
   #label .count { opacity: 0.7; font-size: 13px; margin-top: 2px; }
+
+  #jumpMenu {
+    position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%);
+    background: rgba(20,20,20,0.95); border-radius: 12px; padding: 8px;
+    display: none; flex-direction: column; gap: 2px; min-width: 240px; max-height: 60vh; overflow-y: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 12;
+    font-family: "Malgun Gothic", sans-serif;
+  }
+  #jumpMenu.open { display: flex; }
+  #jumpMenu .item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+    color: #fff; font-size: 14px; cursor: pointer; white-space: nowrap;
+  }
+  #jumpMenu .item:hover { background: rgba(255,255,255,0.1); }
+  #jumpMenu .item.current { background: rgba(255,255,255,0.18); font-weight: 700; }
+  #jumpMenu .item .n { opacity: 0.5; width: 18px; flex-shrink: 0; }
 
   #toggleTab {
     position: fixed; right: 16px; bottom: 16px;
@@ -71,14 +88,15 @@
 <div id="empty-msg" style="display:none;">발표자료가 아직 등록되지 않았습니다.<br>hub.html 안의 SPEAKERS 목록에 파일을 추가해 주세요.</div>
 
 <div id="bar">
-  <button id="prevBtn">◀ 이전</button>
-  <div id="label">
+  <button id="prevBtn">◀ 이전 연사</button>
+  <div id="label" title="연사 목록 보기">
     <div class="name" id="nameText">-</div>
     <div class="count" id="countText">-</div>
   </div>
-  <button id="nextBtn">다음 ▶</button>
+  <button id="nextBtn">다음 연사 ▶</button>
   <button id="fsBtn" title="전체화면">⛶</button>
 </div>
+<div id="jumpMenu"></div>
 <button id="toggleTab" title="컨트롤 바 숨기기/보이기">▾</button>
 
 <script>
@@ -93,6 +111,12 @@
   const fsBtn = document.getElementById('fsBtn');
   const emptyMsg = document.getElementById('empty-msg');
   const stage = document.getElementById('stage');
+  const label = document.getElementById('label');
+  const jumpMenu = document.getElementById('jumpMenu');
+
+  function refocusFrame() {
+    try { frame.contentWindow.focus(); } catch (e) {}
+  }
 
   // enterFromEnd: 이전 연사에서 "뒤로" 넘어온 경우, PDF는 마지막 페이지부터 보여준다.
   // (커스텀 HTML 자료는 내부 구조를 몰라 안전하게 강제할 수 없어 대상에서 뺌 — 처음부터 보임)
@@ -129,7 +153,7 @@
     // 방향키를 눌러도 반응이 없는 문제가 있었음).
     frame.onload = () => {
       try {
-        frame.contentWindow.focus();
+        refocusFrame();
         const doc = frame.contentDocument;
         doc.addEventListener('mousemove', resetCursorTimer);
         if (document.body.classList.contains('cursor-hidden')) {
@@ -158,15 +182,56 @@
   toggleTab.addEventListener('click', () => {
     bar.classList.toggle('hidden');
     toggleTab.textContent = bar.classList.contains('hidden') ? '▴' : '▾';
+    closeJumpMenu();
+    // 숨기기 버튼 자체가 포커스를 가져가 버려서, 그 상태로 방향키를 누르면
+    // 슬라이드가 반응을 안 하는 문제가 있었다. 눌렀으면 바로 포커스를 돌려준다
+    // (그러면 다시 화면을 눌러서 포커스를 복구할 필요가 없어, 그때 생기던
+    // "의도치 않게 페이지가 넘어가는" 문제도 같이 없어진다).
+    refocusFrame();
   });
 
   fsBtn.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
+    const action = !document.fullscreenElement
+      ? document.documentElement.requestFullscreen()
+      : document.exitFullscreen();
+    action.then(refocusFrame).catch(() => {});
+  });
+
+  // 가운데 이름 부분을 누르면 전체 연사 목록이 떠서, 순서 상관없이 바로 그 연사로 이동할 수 있다.
+  function buildJumpMenu() {
+    jumpMenu.innerHTML = '';
+    SPEAKERS.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = 'item' + (i === idx ? ' current' : '');
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = i + 1;
+      const name = document.createElement('span');
+      name.textContent = s.name;
+      item.appendChild(n);
+      item.appendChild(name);
+      item.addEventListener('click', () => {
+        idx = i;
+        render(false);
+        closeJumpMenu();
+      });
+      jumpMenu.appendChild(item);
+    });
+  }
+  function closeJumpMenu() { jumpMenu.classList.remove('open'); }
+  label.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (jumpMenu.classList.contains('open')) { closeJumpMenu(); refocusFrame(); }
+    else { buildJumpMenu(); jumpMenu.classList.add('open'); }
+  });
+  document.addEventListener('click', (e) => {
+    if (jumpMenu.classList.contains('open') && !jumpMenu.contains(e.target) && e.target !== label) {
+      closeJumpMenu();
     }
   });
+  // 메뉴가 열린 채로 화면(iframe) 쪽을 클릭하면 포커스가 iframe으로 넘어가면서
+  // 부모 문서는 blur된다 — 그 경우도 메뉴를 닫아준다.
+  window.addEventListener('blur', closeJumpMenu);
 
   // 전체화면일 때 3초간 마우스를 안 움직이면 커서를 숨긴다 (영상 플레이어와 동일한 방식).
   // 현재 보이는 자료가 iframe이라 그 안에서 움직이는 마우스는 따로 감지해줘야 한다.
