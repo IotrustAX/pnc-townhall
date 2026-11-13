@@ -24,18 +24,26 @@
     display: flex; align-items: center; gap: 10px; position: relative;
   }
   .speaker-row .num { color: #7fd1c5; font-weight: 700; font-size: 14px; width: 16px; flex-shrink: 0; }
-  .speaker-row input[type="text"] { flex: 1; min-width: 0; }
+  .speaker-row input[type="text"] { flex: 1; min-width: 0; align-self: stretch; }
   .speaker-row .remove {
     background: transparent; border: 0; color: #888; cursor: pointer; font-size: 18px; padding: 2px 6px; flex-shrink: 0;
   }
   .speaker-row .remove:hover { color: #e55; }
   .file-input {
-    display: block; flex: 2; min-width: 0; box-sizing: border-box; background: #14161a; border: 1px dashed #333a44;
-    border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #9aa; cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    flex: 2; min-width: 0; min-height: 76px; box-sizing: border-box;
+    background: #14161a; border: 1px dashed #333a44; border-radius: 10px;
+    padding: 8px 12px; cursor: pointer; text-align: center;
   }
-  .file-input.has-file { color: #cde; border-style: solid; border-color: #2F7A7A; }
-  .file-input.dragover { border-color: #7fd1c5; background: #17241f; color: #cde; }
+  .file-input .file-icon { font-size: 18px; color: #667; line-height: 1; }
+  .file-input .file-main {
+    font-size: 13px; font-weight: 600; color: #cde; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .file-input .file-hint { font-size: 11px; color: #667; }
+  .file-input.has-file { border-style: solid; border-color: #2F7A7A; background: #15211f; }
+  .file-input.has-file .file-icon { color: #7fd1c5; }
+  .file-input.dragover { border-color: #7fd1c5; background: #17241f; }
 
   button.ghost {
     background: transparent; border: 1px dashed #3a4049; color: #9aa; border-radius: 8px;
@@ -76,7 +84,7 @@
   <div id="speakerList"></div>
   <button type="button" class="ghost" id="addSpeaker">+ 연사 추가</button>
 
-  <button type="button" class="submit" id="submitBtn">업로드</button>
+  <button type="button" class="submit" id="submitBtn">저장</button>
   <div id="status"></div>
 
   <a class="back" href="index.html">← 발표자료 목록으로</a>
@@ -104,7 +112,9 @@
       '<span class="num">' + (speakerList.children.length + 1) + '</span>' +
       '<input type="text" placeholder="연사 이름" class="speaker-name">' +
       '<label class="file-input">' +
-        '<span class="file-label">클릭해서 선택하거나, 파일을 끌어다 놓으세요</span>' +
+        '<span class="file-icon">⬆</span>' +
+        '<span class="file-main">파일 선택</span>' +
+        '<span class="file-hint">클릭 또는 드래그</span>' +
         '<input type="file" accept=".pdf,.html" class="speaker-file" style="display:none">' +
       '</label>' +
       '<button type="button" class="remove" title="삭제">✕</button>';
@@ -115,14 +125,21 @@
     });
     const fileLabel = row.querySelector('.file-input');
     const fileInput = row.querySelector('.speaker-file');
+    const fileIcon = row.querySelector('.file-icon');
+    const fileMain = row.querySelector('.file-main');
+    const fileHint = row.querySelector('.file-hint');
 
     function updateFileLabel() {
       if (fileInput.files[0]) {
         fileLabel.classList.add('has-file');
-        fileLabel.querySelector('.file-label').textContent = fileInput.files[0].name;
+        fileIcon.textContent = '✓';
+        fileMain.textContent = fileInput.files[0].name;
+        fileHint.textContent = '다른 파일로 바꾸려면 클릭';
       } else {
         fileLabel.classList.remove('has-file');
-        fileLabel.querySelector('.file-label').textContent = '클릭해서 선택하거나, 파일을 끌어다 놓으세요';
+        fileIcon.textContent = '⬆';
+        fileMain.textContent = '파일 선택';
+        fileHint.textContent = '클릭 또는 드래그';
       }
     }
     fileInput.addEventListener('change', updateFileLabel);
