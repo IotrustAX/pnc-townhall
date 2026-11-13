@@ -115,35 +115,6 @@
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
     prevBtn.disabled = idx === 0;
     nextBtn.disabled = idx === SPEAKERS.length - 1;
-
-    // pdf-viewer.html과 speakers/intro.html은 자체적으로 경계(끝/처음) 도달 시
-    // postMessage로 알려준다. 그 외 업로드된 커스텀 HTML 자료는 내부 구조를 모르니,
-    // 키 입력 전후로 내용이 그대로인지 비교해서 경계를 추정한다 (범용 백업 로직).
-    const needsDiffFallback = !src.startsWith('pdf-viewer.html') && s.file !== 'speakers/intro.html';
-    if (needsDiffFallback) {
-      frame.onload = () => {
-        try {
-          const doc = frame.contentDocument;
-          const snapshot = () => {
-            const html = doc.body ? doc.body.innerHTML : '';
-            return html.length + '|' + html.slice(0, 40) + '|' + html.slice(-40);
-          };
-          doc.addEventListener('keydown', (e) => {
-            const isNext = ['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key);
-            const isPrev = ['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key);
-            if (!isNext && !isPrev) return;
-            const before = snapshot();
-            setTimeout(() => {
-              if (snapshot() === before) {
-                if (isNext) goNext(); else goPrev();
-              }
-            }, 120);
-          }, true);
-        } catch (e) { /* 접근 불가 시 그냥 무시 */ }
-      };
-    } else {
-      frame.onload = null;
-    }
   }
 
   function goNext() {
