@@ -53,15 +53,6 @@
   #jumpMenu .item.current { background: rgba(255,255,255,0.18); font-weight: 700; }
   #jumpMenu .item .n { opacity: 0.5; width: 18px; flex-shrink: 0; }
 
-  #toggleTab {
-    position: fixed; right: 16px; bottom: 16px;
-    width: 34px; height: 34px; border-radius: 50%;
-    background: rgba(20,20,20,0.6); color: #fff; border: 0;
-    font-size: 16px; cursor: pointer; z-index: 11;
-  }
-  #toggleTab:hover { background: rgba(20,20,20,0.85); }
-  #toggleTab.pinned { background: #fff; color: #111; }
-
   body.cursor-hidden, body.cursor-hidden * { cursor: none !important; }
 </style>
 </head>
@@ -88,7 +79,7 @@
 </div>
 <div id="empty-msg" style="display:none;">발표자료가 아직 등록되지 않았습니다.<br>hub.html 안의 SPEAKERS 목록에 파일을 추가해 주세요.</div>
 
-<div id="bar">
+<div id="bar" class="hidden">
   <button id="prevBtn">◀ 이전 연사</button>
   <div id="label" title="연사 목록 보기">
     <div class="name" id="nameText">-</div>
@@ -98,7 +89,6 @@
   <button id="fsBtn" title="전체화면">⛶</button>
 </div>
 <div id="jumpMenu"></div>
-<button id="toggleTab" title="컨트롤 바 고정하기">📌</button>
 
 <script>
   let idx = 0;
@@ -108,7 +98,6 @@
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
   const bar = document.getElementById('bar');
-  const toggleTab = document.getElementById('toggleTab');
   const fsBtn = document.getElementById('fsBtn');
   const emptyMsg = document.getElementById('empty-msg');
   const stage = document.getElementById('stage');
@@ -164,7 +153,6 @@
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
     prevBtn.disabled = idx === 0;
     nextBtn.disabled = idx === SPEAKERS.length - 1;
-    resetBarTimer(); // 연사가 바뀌면 바를 잠깐 보여줘서 누구로 바뀌었는지 알 수 있게 한다
 
     // 새 자료가 뜰 때 자동으로 포커스를 줘서, 화면을 한번 클릭하지 않아도
     // 바로 방향키/클리커가 먹히게 한다 (안 그러면 포커스가 이전 버튼 등에 남아있어
@@ -197,30 +185,15 @@
     else if (e.data.hubNav === 'prev') goPrev();
   });
 
-  // 기본은 "자동 숨김" — 마우스를 움직이면 잠깐 보였다가 3초 뒤 다시 숨는다.
-  // 📌 버튼을 누르면 "고정" 상태가 되어 계속 떠 있는다 (다시 누르면 자동 숨김으로 복귀).
-  let barPinned = false;
-  let barTimer = null;
+  // 심플한 규칙: 마우스가 화면 아래쪽(컨트롤 바 높이)에 있으면 보이고, 벗어나면 바로 숨는다.
+  // 연사 목록(jumpMenu)을 열어둔 채로 위쪽을 보고 있을 때는 바가 사라지면 안 되니 계속 보여준다.
   function showBar() { bar.classList.remove('hidden'); }
-  function hideBarIfNotPinned() { if (!barPinned) bar.classList.add('hidden'); }
-  function resetBarTimer() {
-    showBar();
-    clearTimeout(barTimer);
-    if (!barPinned) barTimer = setTimeout(hideBarIfNotPinned, 3000);
+  function hideBarNow() { bar.classList.add('hidden'); }
+  function updateBarVisibility(clientY) {
+    if (jumpMenu.classList.contains('open') || clientY > window.innerHeight - 110) showBar();
+    else hideBarNow();
   }
-
-  toggleTab.addEventListener('click', () => {
-    barPinned = !barPinned;
-    toggleTab.classList.toggle('pinned', barPinned);
-    toggleTab.title = barPinned ? '자동 숨김으로 전환' : '컨트롤 바 고정하기';
-    if (barPinned) { clearTimeout(barTimer); showBar(); }
-    else { resetBarTimer(); }
-    closeJumpMenu();
-    // 버튼 자체가 포커스를 가져가 버려서, 그 상태로 방향키를 누르면 슬라이드가
-    // 반응을 안 하는 문제가 있었다. 눌렀으면 바로 포커스를 돌려준다(화면을
-    // 다시 누를 필요 없게, 그때 생기던 "의도치 않게 페이지가 넘어가는" 문제도 방지).
-    refocusFrame();
-  });
+  document.addEventListener('mouseleave', hideBarNow);
 
   fsBtn.addEventListener('click', () => {
     const action = !document.fullscreenElement
@@ -281,9 +254,9 @@
     clearTimeout(cursorTimer);
     if (document.fullscreenElement) cursorTimer = setTimeout(hideCursor, 3000);
   }
-  function onActivity() {
+  function onActivity(e) {
     resetCursorTimer();
-    resetBarTimer();
+    updateBarVisibility(e.clientY);
   }
   document.addEventListener('mousemove', onActivity);
   document.addEventListener('fullscreenchange', () => {
