@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>타운홀 발표자료 업로드</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8F%9B%EF%B8%8F</text></svg>">
+<style>
+  html, body { margin: 0; min-height: 100%; background: #0f1115; color: #fff;
+    font-family: "Malgun Gothic", sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  p.sub { color: #9aa; margin-top: 0; margin-bottom: 32px; font-size: 14px; line-height: 1.6; }
+  label { display: block; font-size: 13px; color: #aab; margin-bottom: 6px; }
+  input[type="text"], input[type="month"] {
+    width: 100%; box-sizing: border-box; background: #1b1e24; border: 1px solid #2a2e37; color: #fff;
+    border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit;
+  }
+  input[type="text"]:focus, input[type="month"]:focus { outline: 2px solid #2F7A7A; border-color: transparent; }
+  .field { margin-bottom: 22px; }
+
+  #speakerList { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .speaker-row {
+    background: #1b1e24; border: 1px solid #2a2e37; border-radius: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px; position: relative;
+  }
+  .speaker-row .top { display: flex; align-items: center; gap: 10px; }
+  .speaker-row .num { color: #7fd1c5; font-weight: 700; font-size: 14px; width: 20px; flex-shrink: 0; }
+  .speaker-row input[type="text"] { flex: 1; }
+  .speaker-row .remove {
+    background: transparent; border: 0; color: #888; cursor: pointer; font-size: 18px; padding: 2px 6px;
+  }
+  .speaker-row .remove:hover { color: #e55; }
+  .file-input {
+    display: block; width: 100%; box-sizing: border-box; background: #14161a; border: 1px dashed #333a44;
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #9aa; cursor: pointer;
+  }
+  .file-input.has-file { color: #cde; border-style: solid; border-color: #2F7A7A; }
+
+  button.ghost {
+    background: transparent; border: 1px dashed #3a4049; color: #9aa; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; cursor: pointer; width: 100%;
+  }
+  button.ghost:hover { border-color: #2F7A7A; color: #cde; }
+
+  button.submit {
+    width: 100%; margin-top: 24px; background: #2F7A7A; color: #fff; border: 0;
+    border-radius: 10px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  button.submit:disabled { background: #2a3a3a; color: #789; cursor: default; }
+  button.submit:hover:not(:disabled) { background: #358c8c; }
+
+  #status { margin-top: 18px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  #status.error { color: #ff8a8a; }
+  #status.ok { color: #8fe3c0; }
+  #status a { color: #7fd1c5; }
+
+  .back { display: inline-block; margin-top: 28px; color: #789; font-size: 13px; text-decoration: none; }
+  .back:hover { color: #aab; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>타운홀 발표자료 업로드</h1>
+  <p class="sub">
+    새 회차를 등록하거나 기존 회차에 자료를 다시 올립니다. 저장하면 1~2분 안에 사이트에 자동 반영됩니다.<br>
+    PDF·HTML 파일만 올릴 수 있어요. PPT 파일은 먼저 PDF로 내보낸 뒤 올려주세요.
+  </p>
+
+  <div class="field">
+    <label for="month">회차 (연·월)</label>
+    <input type="month" id="month" required>
+  </div>
+
+  <label>연사 목록 (발표 순서대로)</label>
+  <div id="speakerList"></div>
+  <button type="button" class="ghost" id="addSpeaker">+ 연사 추가</button>
+
+  <button type="button" class="submit" id="submitBtn">업로드</button>
+  <div id="status"></div>
+
+  <a class="back" href="index.html">← 발표자료 목록으로</a>
+</div>
+
+<script>
+  const speakerList = document.getElementById('speakerList');
+  const addSpeakerBtn = document.getElementById('addSpeaker');
+  const submitBtn = document.getElementById('submitBtn');
+  const statusEl = document.getElementById('status');
+  const monthInput = document.getElementById('month');
+
+  let rowCount = 0;
+
+  function addSpeakerRow() {
+    const i = rowCount++;
+    const row = document.createElement('div');
+    row.className = 'speaker-row';
+    row.dataset.index = i;
+    row.innerHTML =
+      '<div class="top">' +
+        '<span class="num">' + (speakerList.children.length + 1) + '</span>' +
+        '<input type="text" placeholder="연사 이름" class="speaker-name">' +
+        '<button type="button" class="remove" title="삭제">✕</button>' +
+      '</div>' +
+      '<label class="file-input">' +
+        '<span class="file-label">파일 선택 (PDF 또는 HTML)</span>' +
+        '<input type="file" accept=".pdf,.html" class="speaker-file" style="display:none">' +
+      '</label>';
+
+    row.querySelector('.remove').addEventListener('click', () => {
+      row.remove();
+      renumber();
+    });
+    const fileLabel = row.querySelector('.file-input');
+    const fileInput = row.querySelector('.speaker-file');
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) {
+        fileLabel.classList.add('has-file');
+        fileLabel.querySelector('.file-label').textContent = fileInput.files[0].name;
+      } else {
+        fileLabel.classList.remove('has-file');
+        fileLabel.querySelector('.file-label').textContent = '파일 선택 (PDF 또는 HTML)';
+      }
+    });
+
+    speakerList.appendChild(row);
+  }
+
+  function renumber() {
+    Array.from(speakerList.children).forEach((row, idx) => {
+      row.querySelector('.num').textContent = idx + 1;
+    });
+  }
+
+  addSpeakerBtn.addEventListener('click', addSpeakerRow);
+  addSpeakerRow();
+  addSpeakerRow();
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    const month = monthInput.value; // "2026-12" from <input type="month">
+    if (!month) { setStatus('회차(연·월)를 선택해주세요.', 'error'); return; }
+
+    const rows = Array.from(speakerList.children);
+    const valid = [];
+    for (const row of rows) {
+      const name = row.querySelector('.speaker-name').value.trim();
+      const file = row.querySelector('.speaker-file').files[0];
+      if (!name && !file) continue;
+      if (!name || !file) {
+        setStatus('모든 연사 줄에 이름과 파일을 함께 입력해주세요.', 'error');
+        return;
+      }
+      valid.push({ name, file });
+    }
+    if (valid.length === 0) {
+      setStatus('연사를 한 명 이상 입력해주세요.', 'error');
+      return;
+    }
+
+    const form = new FormData();
+    form.set('month', month);
+    valid.forEach((v, i) => {
+      form.set('name_' + i, v.name);
+      form.set('file_' + i, v.file, v.file.name);
+    });
+
+    submitBtn.disabled = true;
+    setStatus('업로드 중입니다…', '');
+
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setStatus('오류: ' + (data.error || res.statusText), 'error');
+      } else {
+        setStatus('완료! 1~2분 뒤 반영됩니다.\n' + data.url, 'ok');
+        statusEl.innerHTML = '완료! 1~2분 뒤 반영됩니다.<br><a href="' + data.url + '" target="_blank">' + data.url + '</a>';
+        statusEl.className = 'ok';
+      }
+    } catch (e) {
+      setStatus('업로드 중 오류가 발생했습니다: ' + e.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

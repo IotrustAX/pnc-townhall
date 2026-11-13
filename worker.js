@@ -1,0 +1,615 @@
+const OWNER = 'IotrustAX';
+const REPO = 'pnc-townhall';
+const BRANCH = 'main';
+const API = 'https://api.github.com';
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/upload' && request.method === 'POST') {
+      try {
+        return await handleUpload(request, env);
+      } catch (err) {
+        return jsonResponse({ error: String((err && err.message) || err) }, 500);
+      }
+    }
+    return env.ASSETS.fetch(request);
+  },
+};
+
+function jsonResponse(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status: status || 200,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeJsString(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function formatMonthTitle(month) {
+  const parts = month.split('-');
+  return parts[0] + '년 ' + parseInt(parts[1], 10) + '월 타운홀';
+}
+
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function gh(env, path, opts) {
+  opts = opts || {};
+  const headers = Object.assign(
+    {
+      Authorization: 'Bearer ' + env.GITHUB_TOKEN,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'pnc-townhall-uploader',
+    },
+    opts.headers || {}
+  );
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  return fetch(API + path, Object.assign({}, opts, { headers }));
+}
+
+async function ghJson(env, path, opts) {
+  const res = await gh(env, path, opts);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error('GitHub API ' + path + ' 실패 (' + res.status + '): ' + text.slice(0, 300));
+  }
+  return res.json();
+}
+
+async function handleUpload(request, env) {
+  const form = await request.formData();
+  const month = (form.get('month') || '').toString().trim();
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return jsonResponse({ error: '월 형식이 올바르지 않습니다 (예: 2026-12)' }, 400);
+  }
+
+  const speakers = [];
+  let i = 0;
+  while (form.has('name_' + i)) {
+    const name = (form.get('name_' + i) || '').toString().trim();
+    const file = form.get('file_' + i);
+    if (name && file && typeof file === 'object' && 'arrayBuffer' in file) {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (ext !== 'pdf' && ext !== 'html') {
+        return jsonResponse({ error: name + ': PDF 또는 HTML 파일만 올릴 수 있습니다 (받은 파일: ' + file.name + ')' }, 400);
+      }
+      const safeFileName = 'speaker' + (i + 1) + '.' + ext;
+      const buf = await file.arrayBuffer();
+      speakers.push({ name, fileName: safeFileName, base64: toBase64(buf) });
+    }
+    i++;
+  }
+
+  if (speakers.length === 0) {
+    return jsonResponse({ error: '최소 1명의 연사와 파일이 필요합니다' }, 400);
+  }
+
+  const monthTitle = formatMonthTitle(month);
+
+  const speakersArrayJs = speakers
+    .map((s) => '    { name: "' + escapeJsString(s.name) + '", file: "speakers/' + s.fileName + '" },')
+    .join('\n');
+  const fullArrayJs = '    { name: "인트로", file: "speakers/intro.html" },\n' + speakersArrayJs;
+  const hubHtml = HUB_TEMPLATE.replace('__SPEAKERS_ARRAY__', fullArrayJs);
+
+  const agendaItems = speakers
+    .map((s, idx) => '      <div class="item"><span class="num">' + (idx + 1) + '</span><span>' + escapeHtml(s.name) + '</span></div>')
+    .join('\n');
+  const introHtml = INTRO_TEMPLATE.replace(/__TITLE_MONTH__/g, monthTitle).replace('__AGENDA__', agendaItems);
+
+  const files = [
+    { path: 'events/' + month + '/hub.html', content: hubHtml },
+    { path: 'events/' + month + '/pdf-viewer.html', content: PDF_VIEWER_TEMPLATE },
+    { path: 'events/' + month + '/speakers/intro.html', content: introHtml },
+  ];
+  for (const s of speakers) {
+    files.push({ path: 'events/' + month + '/speakers/' + s.fileName, base64: s.base64 });
+  }
+
+  const indexFile = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/contents/index.html?ref=' + BRANCH);
+  const indexContent = new TextDecoder().decode(
+    Uint8Array.from(atob(indexFile.content.replace(/\n/g, '')), (c) => c.charCodeAt(0))
+  );
+  const hubPath = 'events/' + month + '/hub.html';
+  let newIndexContent = indexContent;
+  if (!indexContent.includes(hubPath)) {
+    const linkLine = '    <li><a href="' + hubPath + '">' + monthTitle + '</a></li>';
+    newIndexContent = indexContent.replace('<ul>', '<ul>\n' + linkLine);
+  }
+  files.push({ path: 'index.html', content: newIndexContent });
+
+  const commitSha = await commitFiles(env, files, monthTitle + ' 발표자료 업로드 (업로드 도구)');
+
+  return jsonResponse({
+    ok: true,
+    month,
+    speakerCount: speakers.length,
+    commit: commitSha,
+    url: 'https://pnc-townhall.recruit-9d6.workers.dev/' + hubPath,
+  });
+}
+
+async function commitFiles(env, files, message) {
+  const ref = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/ref/heads/' + BRANCH);
+  const latestCommitSha = ref.object.sha;
+  const latestCommit = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/commits/' + latestCommitSha);
+  const baseTreeSha = latestCommit.tree.sha;
+
+  const treeItems = [];
+  for (const f of files) {
+    const body = f.base64
+      ? JSON.stringify({ content: f.base64, encoding: 'base64' })
+      : JSON.stringify({ content: f.content, encoding: 'utf-8' });
+    const blob = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/blobs', { method: 'POST', body });
+    treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.sha });
+  }
+
+  const tree = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/trees', {
+    method: 'POST',
+    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+  });
+
+  const commit = await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/commits', {
+    method: 'POST',
+    body: JSON.stringify({ message, tree: tree.sha, parents: [latestCommitSha] }),
+  });
+
+  await ghJson(env, '/repos/' + OWNER + '/' + REPO + '/git/refs/heads/' + BRANCH, {
+    method: 'PATCH',
+    body: JSON.stringify({ sha: commit.sha }),
+  });
+
+  return commit.sha;
+}
+
+const HUB_TEMPLATE = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>타운홀미팅 발표자료</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8F%9B%EF%B8%8F</text></svg>">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  #stage iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+  #empty-msg {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #ccc; font-family: "Malgun Gothic", sans-serif; font-size: 20px; text-align: center; padding: 0 20px;
+  }
+
+  #bar {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(20,20,20,0.82); color: #fff;
+    padding: 10px 18px; border-radius: 999px;
+    font-family: "Malgun Gothic", sans-serif; font-size: 15px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 10;
+  }
+  #bar.hidden { opacity: 0; transform: translateX(-50%) translateY(20px); pointer-events: none; }
+
+  #bar button {
+    background: #fff; color: #111; border: 0; border-radius: 999px;
+    padding: 8px 16px; font-size: 15px; cursor: pointer; font-weight: 600;
+  }
+  #bar button:disabled { background: #555; color: #999; cursor: default; }
+  #bar button:hover:not(:disabled) { background: #e5e5e5; }
+
+  #label { min-width: 160px; text-align: center; white-space: nowrap; cursor: pointer; border-radius: 10px; padding: 4px 8px; }
+  #label:hover { background: rgba(255,255,255,0.08); }
+  #label .name { font-weight: 700; }
+  #label .count { opacity: 0.7; font-size: 13px; margin-top: 2px; }
+
+  #jumpMenu {
+    position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%);
+    background: rgba(20,20,20,0.95); border-radius: 12px; padding: 8px;
+    display: none; flex-direction: column; gap: 2px; min-width: 240px; max-height: 60vh; overflow-y: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 12;
+    font-family: "Malgun Gothic", sans-serif;
+  }
+  #jumpMenu.open { display: flex; }
+  #jumpMenu .item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+    color: #fff; font-size: 14px; cursor: pointer; white-space: nowrap;
+  }
+  #jumpMenu .item:hover { background: rgba(255,255,255,0.1); }
+  #jumpMenu .item.current { background: rgba(255,255,255,0.18); font-weight: 700; }
+  #jumpMenu .item .n { opacity: 0.5; width: 18px; flex-shrink: 0; }
+
+  body.cursor-hidden, body.cursor-hidden * { cursor: none !important; }
+</style>
+</head>
+<body>
+
+<!--
+  여기 목록만 고치면 됩니다.
+  name  : 화면 하단에 표시될 연사 이름
+  file  : speakers 폴더 안에 넣은 파일명 (html 또는 pdf)
+  순서대로 상영되며, 아래쪽 "다음/이전" 버튼으로 넘깁니다.
+-->
+<script>
+  const SPEAKERS = [
+__SPEAKERS_ARRAY__
+  ];
+</script>
+
+<div id="stage">
+  <iframe id="frame"></iframe>
+</div>
+<div id="empty-msg" style="display:none;">발표자료가 아직 등록되지 않았습니다.<br>hub.html 안의 SPEAKERS 목록에 파일을 추가해 주세요.</div>
+
+<div id="bar" class="hidden">
+  <button id="prevBtn">◀ 이전 연사</button>
+  <div id="label" title="연사 목록 보기">
+    <div class="name" id="nameText">-</div>
+    <div class="count" id="countText">-</div>
+  </div>
+  <button id="nextBtn">다음 연사 ▶</button>
+  <button id="fsBtn" title="전체화면">⛶</button>
+</div>
+<div id="jumpMenu"></div>
+
+<script>
+  let idx = 0;
+  const frame = document.getElementById('frame');
+  const nameText = document.getElementById('nameText');
+  const countText = document.getElementById('countText');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const bar = document.getElementById('bar');
+  const fsBtn = document.getElementById('fsBtn');
+  const emptyMsg = document.getElementById('empty-msg');
+  const stage = document.getElementById('stage');
+  const label = document.getElementById('label');
+  const jumpMenu = document.getElementById('jumpMenu');
+
+  // 일부 업로드 자료(예: speaker1.html)는 내부에 또 iframe을 품고 있어서,
+  // 바깥쪽에만 포커스를 줘도 방향키가 그 안쪽까지 전달되지 않는다.
+  // 보이는(화면에 표시된) 가장 안쪽 문서까지 재귀적으로 따라 들어가 포커스를 준다.
+  function focusDeepest(win) {
+    try {
+      win.focus();
+      const doc = win.document;
+      for (const f of doc.querySelectorAll('iframe')) {
+        const style = win.getComputedStyle(f);
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          focusDeepest(f.contentWindow);
+          return;
+        }
+      }
+    } catch (e) { /* 접근 불가(다른 출처 등) 시 무시 */ }
+  }
+  function refocusFrame() {
+    try { focusDeepest(frame.contentWindow); } catch (e) {}
+  }
+
+  // enterFromEnd: 이전 연사에서 "뒤로" 넘어온 경우, PDF는 마지막 페이지부터 보여준다.
+  // (커스텀 HTML 자료는 내부 구조를 몰라 안전하게 강제할 수 없어 대상에서 뺌 — 처음부터 보임)
+  function resolveSrc(file, enterFromEnd) {
+    const ext = file.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      let url = 'pdf-viewer.html?file=' + encodeURIComponent(file);
+      if (enterFromEnd) url += '&start=last';
+      return url;
+    }
+    return file;
+  }
+
+  function render(enterFromEnd) {
+    if (SPEAKERS.length === 0) {
+      stage.style.display = 'none';
+      emptyMsg.style.display = 'flex';
+      nameText.textContent = '-';
+      countText.textContent = '-';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      return;
+    }
+    const s = SPEAKERS[idx];
+    const src = resolveSrc(s.file, enterFromEnd);
+    frame.src = src;
+    nameText.textContent = s.name;
+    countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === SPEAKERS.length - 1;
+
+    // 새 자료가 뜰 때 자동으로 포커스를 줘서, 화면을 한번 클릭하지 않아도
+    // 바로 방향키/클리커가 먹히게 한다 (안 그러면 포커스가 이전 버튼 등에 남아있어
+    // 방향키를 눌러도 반응이 없는 문제가 있었음).
+    frame.onload = () => {
+      try {
+        refocusFrame();
+        attachActivityListeners(frame.contentDocument);
+      } catch (e) { /* 접근 불가 시 무시 */ }
+    };
+  }
+
+  // speaker1.html처럼 내부에 또 iframe을 품은 자료는, 그 안쪽에서 마우스가 움직여도
+  // 바깥(부모) 문서까지 전달되지 않는다. 모든 중첩 iframe까지 재귀적으로 따라 들어가
+  // 마우스 감지 리스너를 걸어줘야, 안쪽 화면에서도 컨트롤 바가 제대로 나타난다.
+  function attachActivityListeners(doc) {
+    try {
+      doc.addEventListener('mousemove', onActivity);
+      if (document.body.classList.contains('cursor-hidden')) {
+        doc.body.style.setProperty('cursor', 'none', 'important');
+      }
+      for (const f of doc.querySelectorAll('iframe')) {
+        try { attachActivityListeners(f.contentDocument); } catch (e) {}
+      }
+    } catch (e) { /* 접근 불가(다른 출처 등) 시 무시 */ }
+  }
+
+  function goNext() {
+    if (idx < SPEAKERS.length - 1) { idx++; render(false); }
+  }
+  function goPrev() {
+    if (idx > 0) { idx--; render(true); }
+  }
+
+  prevBtn.addEventListener('click', goPrev);
+  nextBtn.addEventListener('click', goNext);
+
+  window.addEventListener('message', (e) => {
+    if (!e.data) return;
+    if (e.data.hubNav === 'next') goNext();
+    else if (e.data.hubNav === 'prev') goPrev();
+  });
+
+  // 심플한 규칙: 마우스가 화면 아래쪽(컨트롤 바 높이)에 있으면 보이고, 벗어나면 바로 숨는다.
+  // 연사 목록(jumpMenu)을 열어둔 채로 위쪽을 보고 있을 때는 바가 사라지면 안 되니 계속 보여준다.
+  function showBar() { bar.classList.remove('hidden'); }
+  function hideBarNow() { bar.classList.add('hidden'); }
+  function updateBarVisibility(clientY) {
+    if (jumpMenu.classList.contains('open') || clientY > window.innerHeight - 110) showBar();
+    else hideBarNow();
+  }
+  document.addEventListener('mouseleave', hideBarNow);
+
+  fsBtn.addEventListener('click', () => {
+    const action = !document.fullscreenElement
+      ? document.documentElement.requestFullscreen()
+      : document.exitFullscreen();
+    action.then(refocusFrame).catch(() => {});
+  });
+
+  // 가운데 이름 부분을 누르면 전체 연사 목록이 떠서, 순서 상관없이 바로 그 연사로 이동할 수 있다.
+  function buildJumpMenu() {
+    jumpMenu.innerHTML = '';
+    SPEAKERS.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = 'item' + (i === idx ? ' current' : '');
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = i + 1;
+      const name = document.createElement('span');
+      name.textContent = s.name;
+      item.appendChild(n);
+      item.appendChild(name);
+      item.addEventListener('click', () => {
+        idx = i;
+        render(false);
+        closeJumpMenu();
+      });
+      jumpMenu.appendChild(item);
+    });
+  }
+  function closeJumpMenu() { jumpMenu.classList.remove('open'); }
+  label.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (jumpMenu.classList.contains('open')) { closeJumpMenu(); refocusFrame(); }
+    else { buildJumpMenu(); jumpMenu.classList.add('open'); }
+  });
+  document.addEventListener('click', (e) => {
+    if (jumpMenu.classList.contains('open') && !jumpMenu.contains(e.target) && e.target !== label) {
+      closeJumpMenu();
+    }
+  });
+  // 메뉴가 열린 채로 화면(iframe) 쪽을 클릭하면 포커스가 iframe으로 넘어가면서
+  // 부모 문서는 blur된다 — 그 경우도 메뉴를 닫아준다.
+  window.addEventListener('blur', closeJumpMenu);
+
+  // 전체화면일 때 3초간 마우스를 안 움직이면 커서를 숨긴다 (영상 플레이어와 동일한 방식).
+  // 현재 보이는 자료가 iframe이라 그 안에서 움직이는 마우스는 따로 감지해줘야 한다.
+  let cursorTimer = null;
+  function setCursorRecursive(doc, hidden) {
+    try {
+      doc.body.style.cursor = hidden ? 'none' : '';
+      if (hidden) doc.body.style.setProperty('cursor', 'none', 'important');
+      for (const f of doc.querySelectorAll('iframe')) {
+        try { setCursorRecursive(f.contentDocument, hidden); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  function showCursor() {
+    document.body.classList.remove('cursor-hidden');
+    setCursorRecursive(frame.contentDocument, false);
+  }
+  function hideCursor() {
+    document.body.classList.add('cursor-hidden');
+    setCursorRecursive(frame.contentDocument, true);
+  }
+  function resetCursorTimer() {
+    showCursor();
+    clearTimeout(cursorTimer);
+    if (document.fullscreenElement) cursorTimer = setTimeout(hideCursor, 3000);
+  }
+  function onActivity(e) {
+    resetCursorTimer();
+    updateBarVisibility(e.clientY);
+  }
+  document.addEventListener('mousemove', onActivity);
+  document.addEventListener('fullscreenchange', () => {
+    clearTimeout(cursorTimer);
+    if (document.fullscreenElement) resetCursorTimer();
+    else showCursor();
+  });
+
+  render();
+</script>
+
+</body>
+</html>
+`;
+
+const INTRO_TEMPLATE = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>타운홀미팅 안내</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0d0c; color: #fff;
+    font-family: "Malgun Gothic", sans-serif; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; }
+  .glow {
+    position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(47,122,122,0.35) 0%, rgba(47,122,122,0) 70%);
+  }
+  .box { position: relative; text-align: center; }
+  .eyebrow { color: #7fd1c5; letter-spacing: 4px; font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+  h1 { font-size: 52px; margin: 0 0 14px; }
+  .sub { font-size: 20px; color: #aab; margin: 0 0 56px; }
+  .agenda { display: inline-flex; flex-direction: column; gap: 14px; text-align: left; }
+  .agenda .item { display: flex; align-items: baseline; gap: 14px; font-size: 20px; }
+  .agenda .num { color: #2F7A7A; font-weight: 700; width: 24px; }
+  .brand { position: fixed; left: 32px; bottom: 28px; font-weight: 700; letter-spacing: 2px; color: #fff; opacity: 0.85; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="box">
+    <div class="eyebrow">TOWN HALL MEETING</div>
+    <h1>__TITLE_MONTH__</h1>
+    <p class="sub">곧 시작합니다</p>
+    <div class="agenda">
+__AGENDA__
+    </div>
+  </div>
+  <div class="brand">IOTRUST</div>
+
+<script>
+  function goNext() { parent.postMessage({ hubNav: 'next' }, '*'); }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Enter', 'Backspace'].includes(e.key)) {
+      e.preventDefault();
+      goNext();
+    }
+  });
+  document.addEventListener('click', goNext);
+</script>
+</body>
+</html>
+`;
+
+const PDF_VIEWER_TEMPLATE = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PDF 뷰어</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #canvas-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #pageInfo {
+    position: fixed; left: 16px; bottom: 16px; color: #fff; opacity: 0.5;
+    font-family: "Malgun Gothic", sans-serif; font-size: 13px; pointer-events: none;
+  }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #777; font-family: "Malgun Gothic", sans-serif; font-size: 15px; text-align: center; padding: 0 20px;
+  }
+</style>
+</head>
+<body>
+<div id="loading">불러오는 중…</div>
+<div id="canvas-wrap"></div>
+<div id="pageInfo"></div>
+
+<script src="../../pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '../../pdf.worker.min.js';
+
+  const params = new URLSearchParams(location.search);
+  const fileParam = params.get('file');
+  const startLast = params.get('start') === 'last';
+  const wrap = document.getElementById('canvas-wrap');
+  const pageInfo = document.getElementById('pageInfo');
+  const loading = document.getElementById('loading');
+
+  let pdfDoc = null;
+  let pageNum = 1;
+  let rendering = false;
+
+  function renderPage(num) {
+    if (!pdfDoc) return;
+    rendering = true;
+    pdfDoc.getPage(num).then((page) => {
+      const dpr = window.devicePixelRatio || 1;
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(window.innerWidth / base.width, window.innerHeight / base.height) * dpr;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = (viewport.width / dpr) + 'px';
+      canvas.style.height = (viewport.height / dpr) + 'px';
+
+      page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise.then(() => {
+        wrap.innerHTML = '';
+        wrap.appendChild(canvas);
+        pageInfo.textContent = num + ' / ' + pdfDoc.numPages;
+        rendering = false;
+      });
+    });
+  }
+
+  function goTo(num) {
+    if (!pdfDoc || rendering) return;
+    if (num < 1) { parent.postMessage({ hubNav: 'prev' }, '*'); return; }
+    if (num > pdfDoc.numPages) { parent.postMessage({ hubNav: 'next' }, '*'); return; }
+    pageNum = num;
+    renderPage(pageNum);
+  }
+
+  if (!fileParam) {
+    loading.textContent = 'PDF 파일 경로(file 파라미터)가 없습니다.';
+  } else {
+    pdfjsLib.getDocument(fileParam).promise.then((doc) => {
+      pdfDoc = doc;
+      if (startLast) pageNum = pdfDoc.numPages;
+      loading.style.display = 'none';
+      renderPage(pageNum);
+    }).catch((err) => {
+      loading.textContent = 'PDF를 불러오지 못했습니다: ' + err.message;
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) { goTo(pageNum + 1); e.preventDefault(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { goTo(pageNum - 1); e.preventDefault(); }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.clientX > window.innerWidth / 2) goTo(pageNum + 1);
+    else goTo(pageNum - 1);
+  });
+
+  window.addEventListener('resize', () => renderPage(pageNum));
+</script>
+</body>
+</html>
+`;

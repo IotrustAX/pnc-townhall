@@ -1,5 +1,7 @@
 name = "pnc-townhall"
 compatibility_date = "2026-11-13"
+main = "worker.js"
 
 [assets]
 directory = "./"
+binding = "ASSETS"
