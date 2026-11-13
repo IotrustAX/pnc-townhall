@@ -60,6 +60,7 @@
     font-size: 16px; cursor: pointer; z-index: 11;
   }
   #toggleTab:hover { background: rgba(20,20,20,0.85); }
+  #toggleTab.pinned { background: #fff; color: #111; }
 
   body.cursor-hidden, body.cursor-hidden * { cursor: none !important; }
 </style>
@@ -97,7 +98,7 @@
   <button id="fsBtn" title="전체화면">⛶</button>
 </div>
 <div id="jumpMenu"></div>
-<button id="toggleTab" title="컨트롤 바 숨기기/보이기">▾</button>
+<button id="toggleTab" title="컨트롤 바 고정하기">📌</button>
 
 <script>
   let idx = 0;
@@ -163,6 +164,7 @@
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
     prevBtn.disabled = idx === 0;
     nextBtn.disabled = idx === SPEAKERS.length - 1;
+    resetBarTimer(); // 연사가 바뀌면 바를 잠깐 보여줘서 누구로 바뀌었는지 알 수 있게 한다
 
     // 새 자료가 뜰 때 자동으로 포커스를 줘서, 화면을 한번 클릭하지 않아도
     // 바로 방향키/클리커가 먹히게 한다 (안 그러면 포커스가 이전 버튼 등에 남아있어
@@ -171,7 +173,7 @@
       try {
         refocusFrame();
         const doc = frame.contentDocument;
-        doc.addEventListener('mousemove', resetCursorTimer);
+        doc.addEventListener('mousemove', onActivity);
         if (document.body.classList.contains('cursor-hidden')) {
           doc.body.style.setProperty('cursor', 'none', 'important');
         }
@@ -195,14 +197,28 @@
     else if (e.data.hubNav === 'prev') goPrev();
   });
 
+  // 기본은 "자동 숨김" — 마우스를 움직이면 잠깐 보였다가 3초 뒤 다시 숨는다.
+  // 📌 버튼을 누르면 "고정" 상태가 되어 계속 떠 있는다 (다시 누르면 자동 숨김으로 복귀).
+  let barPinned = false;
+  let barTimer = null;
+  function showBar() { bar.classList.remove('hidden'); }
+  function hideBarIfNotPinned() { if (!barPinned) bar.classList.add('hidden'); }
+  function resetBarTimer() {
+    showBar();
+    clearTimeout(barTimer);
+    if (!barPinned) barTimer = setTimeout(hideBarIfNotPinned, 3000);
+  }
+
   toggleTab.addEventListener('click', () => {
-    bar.classList.toggle('hidden');
-    toggleTab.textContent = bar.classList.contains('hidden') ? '▴' : '▾';
+    barPinned = !barPinned;
+    toggleTab.classList.toggle('pinned', barPinned);
+    toggleTab.title = barPinned ? '자동 숨김으로 전환' : '컨트롤 바 고정하기';
+    if (barPinned) { clearTimeout(barTimer); showBar(); }
+    else { resetBarTimer(); }
     closeJumpMenu();
-    // 숨기기 버튼 자체가 포커스를 가져가 버려서, 그 상태로 방향키를 누르면
-    // 슬라이드가 반응을 안 하는 문제가 있었다. 눌렀으면 바로 포커스를 돌려준다
-    // (그러면 다시 화면을 눌러서 포커스를 복구할 필요가 없어, 그때 생기던
-    // "의도치 않게 페이지가 넘어가는" 문제도 같이 없어진다).
+    // 버튼 자체가 포커스를 가져가 버려서, 그 상태로 방향키를 누르면 슬라이드가
+    // 반응을 안 하는 문제가 있었다. 눌렀으면 바로 포커스를 돌려준다(화면을
+    // 다시 누를 필요 없게, 그때 생기던 "의도치 않게 페이지가 넘어가는" 문제도 방지).
     refocusFrame();
   });
 
@@ -265,7 +281,11 @@
     clearTimeout(cursorTimer);
     if (document.fullscreenElement) cursorTimer = setTimeout(hideCursor, 3000);
   }
-  document.addEventListener('mousemove', resetCursorTimer);
+  function onActivity() {
+    resetCursorTimer();
+    resetBarTimer();
+  }
+  document.addEventListener('mousemove', onActivity);
   document.addEventListener('fullscreenchange', () => {
     clearTimeout(cursorTimer);
     if (document.fullscreenElement) resetCursorTimer();
