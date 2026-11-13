@@ -17,6 +17,11 @@
   }
   input[type="text"]:focus, input[type="month"]:focus { outline: 2px solid #2F7A7A; border-color: transparent; }
   .field { margin-bottom: 22px; }
+  #monthWarning {
+    display: none; margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+    background: #2a1f14; border: 1px solid #5a4020; color: #ffcf8f; font-size: 13px; line-height: 1.6;
+  }
+  #monthWarning.show { display: block; }
 
   #speakerList { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
   .speaker-row {
@@ -78,6 +83,7 @@
   <div class="field">
     <label for="month">회차 (연·월)</label>
     <input type="month" id="month" required>
+    <div id="monthWarning"></div>
   </div>
 
   <label>연사 목록 (발표 순서대로)</label>
@@ -96,10 +102,36 @@
   const submitBtn = document.getElementById('submitBtn');
   const statusEl = document.getElementById('status');
   const monthInput = document.getElementById('month');
+  const monthWarning = document.getElementById('monthWarning');
 
   // 작성일 기준 이번 달을 기본값으로 채워둔다.
   const today = new Date();
   monthInput.value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+
+  // 이미 자료가 있는 달을 실수로 덮어쓰는 사고를 막기 위해, 선택한 달에 기존 연사가
+  // 있으면 미리 경고하고 저장 시 한 번 더 확인을 받는다.
+  let monthCheckExists = false;
+  let monthCheckToken = 0;
+  async function checkMonth() {
+    const month = monthInput.value;
+    const token = ++monthCheckToken;
+    monthCheckExists = false;
+    monthWarning.classList.remove('show');
+    if (!month) return;
+    try {
+      const res = await fetch('/api/check-month?month=' + encodeURIComponent(month));
+      const data = await res.json();
+      if (token !== monthCheckToken) return; // 그 사이 다른 달로 바뀌었으면 무시
+      if (data.exists) {
+        monthCheckExists = true;
+        const list = (data.speakers || []).join(', ') || '(확인 불가)';
+        monthWarning.textContent = '⚠️ ' + month + '에는 이미 자료가 있어요 (현재 연사: ' + list + '). 저장하면 덮어씌워집니다.';
+        monthWarning.classList.add('show');
+      }
+    } catch (e) { /* 확인 실패 시에는 그냥 경고 없이 진행 — 저장 자체를 막지는 않음 */ }
+  }
+  monthInput.addEventListener('change', checkMonth);
+  checkMonth();
 
   let rowCount = 0;
 
@@ -202,6 +234,11 @@
     if (valid.length === 0) {
       setStatus('연사를 한 명 이상 입력해주세요.', 'error');
       return;
+    }
+
+    if (monthCheckExists) {
+      const ok = confirm(month + '에는 이미 발표자료가 있습니다.\n저장하면 기존 내용을 덮어씁니다. 계속할까요?');
+      if (!ok) return;
     }
 
     const form = new FormData();

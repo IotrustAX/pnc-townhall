@@ -13,6 +13,13 @@ export default {
         return jsonResponse({ error: String((err && err.message) || err) }, 500);
       }
     }
+    if (url.pathname === '/api/check-month' && request.method === 'GET') {
+      try {
+        return await handleCheckMonth(url, env);
+      } catch (err) {
+        return jsonResponse({ error: String((err && err.message) || err) }, 500);
+      }
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -68,6 +75,28 @@ async function ghJson(env, path, opts) {
     throw new Error('GitHub API ' + path + ' 실패 (' + res.status + '): ' + text.slice(0, 300));
   }
   return res.json();
+}
+
+async function handleCheckMonth(url, env) {
+  const month = (url.searchParams.get('month') || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return jsonResponse({ error: '월 형식이 올바르지 않습니다' }, 400);
+  }
+  const res = await gh(env, '/repos/' + OWNER + '/' + REPO + '/contents/events/' + month + '/hub.html');
+  if (res.status === 404) {
+    return jsonResponse({ exists: false });
+  }
+  if (!res.ok) {
+    throw new Error('GitHub 조회 실패 (' + res.status + ')');
+  }
+  const data = await res.json();
+  const hubHtml = new TextDecoder().decode(
+    Uint8Array.from(atob(data.content.replace(/\n/g, '')), (c) => c.charCodeAt(0))
+  );
+  const names = Array.from(hubHtml.matchAll(/name:\s*"([^"]*)"/g))
+    .map((m) => m[1])
+    .filter((n) => n !== '인트로');
+  return jsonResponse({ exists: true, speakers: names });
 }
 
 async function handleUpload(request, env) {
