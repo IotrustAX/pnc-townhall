@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>발표자료 통합 상영</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  #stage iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+  #empty-msg {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #ccc; font-family: "Malgun Gothic", sans-serif; font-size: 20px; text-align: center; padding: 0 20px;
+  }
+
+  #bar {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(20,20,20,0.82); color: #fff;
+    padding: 10px 18px; border-radius: 999px;
+    font-family: "Malgun Gothic", sans-serif; font-size: 15px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 10;
+  }
+  #bar.hidden { opacity: 0; transform: translateX(-50%) translateY(20px); pointer-events: none; }
+
+  #bar button {
+    background: #fff; color: #111; border: 0; border-radius: 999px;
+    padding: 8px 16px; font-size: 15px; cursor: pointer; font-weight: 600;
+  }
+  #bar button:disabled { background: #555; color: #999; cursor: default; }
+  #bar button:hover:not(:disabled) { background: #e5e5e5; }
+
+  #label { min-width: 160px; text-align: center; white-space: nowrap; }
+  #label .name { font-weight: 700; }
+  #label .count { opacity: 0.7; font-size: 13px; margin-top: 2px; }
+
+  #toggleTab {
+    position: fixed; right: 16px; bottom: 16px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(20,20,20,0.6); color: #fff; border: 0;
+    font-size: 16px; cursor: pointer; z-index: 11;
+  }
+  #toggleTab:hover { background: rgba(20,20,20,0.85); }
+</style>
+</head>
+<body>
+
+<!--
+  여기 목록만 고치면 됩니다.
+  name  : 화면 하단에 표시될 연사 이름
+  file  : speakers 폴더 안에 넣은 파일명 (html 또는 pdf)
+  순서대로 상영되며, 아래쪽 "다음/이전" 버튼으로 넘깁니다.
+-->
+<script>
+  const SPEAKERS = [
+    { name: "예시 연사 (샘플)", file: "speakers/example.html" }
+    // { name: "연사 이름", file: "speakers/연사파일.pdf" },
+    // { name: "연사 이름", file: "speakers/연사파일.html" },
+  ];
+</script>
+
+<div id="stage">
+  <iframe id="frame"></iframe>
+</div>
+<div id="empty-msg" style="display:none;">발표자료가 아직 등록되지 않았습니다.<br>hub.html 안의 SPEAKERS 목록에 파일을 추가해 주세요.</div>
+
+<div id="bar">
+  <button id="prevBtn">◀ 이전</button>
+  <div id="label">
+    <div class="name" id="nameText">-</div>
+    <div class="count" id="countText">-</div>
+  </div>
+  <button id="nextBtn">다음 ▶</button>
+  <button id="fsBtn" title="전체화면">⛶</button>
+</div>
+<button id="toggleTab" title="컨트롤 바 숨기기/보이기">▾</button>
+
+<script>
+  let idx = 0;
+  const frame = document.getElementById('frame');
+  const nameText = document.getElementById('nameText');
+  const countText = document.getElementById('countText');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const bar = document.getElementById('bar');
+  const toggleTab = document.getElementById('toggleTab');
+  const fsBtn = document.getElementById('fsBtn');
+  const emptyMsg = document.getElementById('empty-msg');
+  const stage = document.getElementById('stage');
+
+  function render() {
+    if (SPEAKERS.length === 0) {
+      stage.style.display = 'none';
+      emptyMsg.style.display = 'flex';
+      nameText.textContent = '-';
+      countText.textContent = '-';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      return;
+    }
+    const s = SPEAKERS[idx];
+    frame.src = s.file;
+    nameText.textContent = s.name;
+    countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === SPEAKERS.length - 1;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (idx > 0) { idx--; render(); }
+  });
+  nextBtn.addEventListener('click', () => {
+    if (idx < SPEAKERS.length - 1) { idx++; render(); }
+  });
+
+  toggleTab.addEventListener('click', () => {
+    bar.classList.toggle('hidden');
+    toggleTab.textContent = bar.classList.contains('hidden') ? '▴' : '▾';
+  });
+
+  fsBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+
+  render();
+</script>
+
+</body>
+</html>
