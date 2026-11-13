@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PDF 뷰어</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #canvas-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #pageInfo {
+    position: fixed; left: 16px; bottom: 16px; color: #fff; opacity: 0.5;
+    font-family: "Malgun Gothic", sans-serif; font-size: 13px; pointer-events: none;
+  }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #777; font-family: "Malgun Gothic", sans-serif; font-size: 15px; text-align: center; padding: 0 20px;
+  }
+</style>
+</head>
+<body>
+<div id="loading">불러오는 중…</div>
+<div id="canvas-wrap"></div>
+<div id="pageInfo"></div>
+
+<script src="../../pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '../../pdf.worker.min.js';
+
+  const params = new URLSearchParams(location.search);
+  const fileParam = params.get('file');
+  const startLast = params.get('start') === 'last';
+  const wrap = document.getElementById('canvas-wrap');
+  const pageInfo = document.getElementById('pageInfo');
+  const loading = document.getElementById('loading');
+
+  let pdfDoc = null;
+  let pageNum = 1;
+  let rendering = false;
+
+  function renderPage(num) {
+    if (!pdfDoc) return;
+    rendering = true;
+    pdfDoc.getPage(num).then((page) => {
+      const dpr = window.devicePixelRatio || 1;
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(window.innerWidth / base.width, window.innerHeight / base.height) * dpr;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = (viewport.width / dpr) + 'px';
+      canvas.style.height = (viewport.height / dpr) + 'px';
+
+      page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise.then(() => {
+        wrap.innerHTML = '';
+        wrap.appendChild(canvas);
+        pageInfo.textContent = num + ' / ' + pdfDoc.numPages;
+        rendering = false;
+      });
+    });
+  }
+
+  function goTo(num) {
+    if (!pdfDoc || rendering) return;
+    if (num < 1) { parent.postMessage({ hubNav: 'prev' }, '*'); return; }
+    if (num > pdfDoc.numPages) { parent.postMessage({ hubNav: 'next' }, '*'); return; }
+    pageNum = num;
+    renderPage(pageNum);
+  }
+
+  if (!fileParam) {
+    loading.textContent = 'PDF 파일 경로(file 파라미터)가 없습니다.';
+  } else {
+    pdfjsLib.getDocument(fileParam).promise.then((doc) => {
+      pdfDoc = doc;
+      if (startLast) pageNum = pdfDoc.numPages;
+      loading.style.display = 'none';
+      renderPage(pageNum);
+    }).catch((err) => {
+      loading.textContent = 'PDF를 불러오지 못했습니다: ' + err.message;
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) { goTo(pageNum + 1); e.preventDefault(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { goTo(pageNum - 1); e.preventDefault(); }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.clientX > window.innerWidth / 2) goTo(pageNum + 1);
+    else goTo(pageNum - 1);
+  });
+
+  window.addEventListener('resize', () => renderPage(pageNum));
+</script>
+</body>
+</html>

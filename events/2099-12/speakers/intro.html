@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>타운홀미팅 안내</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0d0c; color: #fff;
+    font-family: "Malgun Gothic", sans-serif; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; }
+  .glow {
+    position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(47,122,122,0.35) 0%, rgba(47,122,122,0) 70%);
+  }
+  .box { position: relative; text-align: center; }
+  .eyebrow { color: #7fd1c5; letter-spacing: 4px; font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+  h1 { font-size: 52px; margin: 0 0 14px; }
+  .sub { font-size: 20px; color: #aab; margin: 0 0 56px; }
+  .agenda { display: inline-flex; flex-direction: column; gap: 14px; text-align: left; }
+  .agenda .item { display: flex; align-items: baseline; gap: 14px; font-size: 20px; }
+  .agenda .num { color: #2F7A7A; font-weight: 700; width: 24px; }
+  .brand { position: fixed; left: 32px; bottom: 28px; font-weight: 700; letter-spacing: 2px; color: #fff; opacity: 0.85; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="box">
+    <div class="eyebrow">TOWN HALL MEETING</div>
+    <h1>2099년 12월 타운홀</h1>
+    <p class="sub">곧 시작합니다</p>
+    <div class="agenda">
+      <div class="item"><span class="num">1</span><span>건보공단</span></div>
+      <div class="item"><span class="num">2</span><span>서울재단</span></div>
+    </div>
+  </div>
+  <div class="brand">IOTRUST</div>
+
+<script>
+  function goNext() { parent.postMessage({ hubNav: 'next' }, '*'); }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Enter', 'Backspace'].includes(e.key)) {
+      e.preventDefault();
+      goNext();
+    }
+  });
+  document.addEventListener('click', goNext);
+</script>
+</body>
+</html>
