@@ -89,6 +89,10 @@
   const statusEl = document.getElementById('status');
   const monthInput = document.getElementById('month');
 
+  // 작성일 기준 이번 달을 기본값으로 채워둔다.
+  const today = new Date();
+  monthInput.value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+
   let rowCount = 0;
 
   function addSpeakerRow() {
