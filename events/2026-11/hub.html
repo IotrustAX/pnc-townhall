@@ -114,8 +114,24 @@
   const label = document.getElementById('label');
   const jumpMenu = document.getElementById('jumpMenu');
 
+  // 일부 업로드 자료(예: speaker1.html)는 내부에 또 iframe을 품고 있어서,
+  // 바깥쪽에만 포커스를 줘도 방향키가 그 안쪽까지 전달되지 않는다.
+  // 보이는(화면에 표시된) 가장 안쪽 문서까지 재귀적으로 따라 들어가 포커스를 준다.
+  function focusDeepest(win) {
+    try {
+      win.focus();
+      const doc = win.document;
+      for (const f of doc.querySelectorAll('iframe')) {
+        const style = win.getComputedStyle(f);
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          focusDeepest(f.contentWindow);
+          return;
+        }
+      }
+    } catch (e) { /* 접근 불가(다른 출처 등) 시 무시 */ }
+  }
   function refocusFrame() {
-    try { frame.contentWindow.focus(); } catch (e) {}
+    try { focusDeepest(frame.contentWindow); } catch (e) {}
   }
 
   // enterFromEnd: 이전 연사에서 "뒤로" 넘어온 경우, PDF는 마지막 페이지부터 보여준다.
