@@ -43,6 +43,8 @@
     font-size: 16px; cursor: pointer; z-index: 11;
   }
   #toggleTab:hover { background: rgba(20,20,20,0.85); }
+
+  body.cursor-hidden, body.cursor-hidden * { cursor: none !important; }
 </style>
 </head>
 <body>
@@ -121,6 +123,20 @@
     countText.textContent = (idx + 1) + ' / ' + SPEAKERS.length;
     prevBtn.disabled = idx === 0;
     nextBtn.disabled = idx === SPEAKERS.length - 1;
+
+    // 새 자료가 뜰 때 자동으로 포커스를 줘서, 화면을 한번 클릭하지 않아도
+    // 바로 방향키/클리커가 먹히게 한다 (안 그러면 포커스가 이전 버튼 등에 남아있어
+    // 방향키를 눌러도 반응이 없는 문제가 있었음).
+    frame.onload = () => {
+      try {
+        frame.contentWindow.focus();
+        const doc = frame.contentDocument;
+        doc.addEventListener('mousemove', resetCursorTimer);
+        if (document.body.classList.contains('cursor-hidden')) {
+          doc.body.style.setProperty('cursor', 'none', 'important');
+        }
+      } catch (e) { /* 접근 불가 시 무시 */ }
+    };
   }
 
   function goNext() {
@@ -150,6 +166,29 @@
     } else {
       document.exitFullscreen().catch(() => {});
     }
+  });
+
+  // 전체화면일 때 3초간 마우스를 안 움직이면 커서를 숨긴다 (영상 플레이어와 동일한 방식).
+  // 현재 보이는 자료가 iframe이라 그 안에서 움직이는 마우스는 따로 감지해줘야 한다.
+  let cursorTimer = null;
+  function showCursor() {
+    document.body.classList.remove('cursor-hidden');
+    try { frame.contentDocument.body.style.cursor = ''; } catch (e) {}
+  }
+  function hideCursor() {
+    document.body.classList.add('cursor-hidden');
+    try { frame.contentDocument.body.style.setProperty('cursor', 'none', 'important'); } catch (e) {}
+  }
+  function resetCursorTimer() {
+    showCursor();
+    clearTimeout(cursorTimer);
+    if (document.fullscreenElement) cursorTimer = setTimeout(hideCursor, 3000);
+  }
+  document.addEventListener('mousemove', resetCursorTimer);
+  document.addEventListener('fullscreenchange', () => {
+    clearTimeout(cursorTimer);
+    if (document.fullscreenElement) resetCursorTimer();
+    else showCursor();
   });
 
   render();
