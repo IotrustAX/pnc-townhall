@@ -1,3 +1,0 @@
-[2026-11-13T02:52:49.038Z] GET https://iotrustax.github.io/pnc-townhall-slides/ → pending (?ms, ?B)
-[2026-11-13T02:53:00.844Z] GET https://iotrustax.github.io/pnc-townhall-slides/events/2026-11/hub.html → pending (?ms, ?B)
-[2026-11-13T02:53:01.115Z] GET https://iotrustax.github.io/pnc-townhall-slides/events/2026-11/speakers/example.html → 200 (220ms, 1145B)
