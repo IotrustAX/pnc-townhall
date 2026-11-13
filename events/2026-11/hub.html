@@ -160,13 +160,24 @@
     frame.onload = () => {
       try {
         refocusFrame();
-        const doc = frame.contentDocument;
-        doc.addEventListener('mousemove', onActivity);
-        if (document.body.classList.contains('cursor-hidden')) {
-          doc.body.style.setProperty('cursor', 'none', 'important');
-        }
+        attachActivityListeners(frame.contentDocument);
       } catch (e) { /* 접근 불가 시 무시 */ }
     };
+  }
+
+  // speaker1.html처럼 내부에 또 iframe을 품은 자료는, 그 안쪽에서 마우스가 움직여도
+  // 바깥(부모) 문서까지 전달되지 않는다. 모든 중첩 iframe까지 재귀적으로 따라 들어가
+  // 마우스 감지 리스너를 걸어줘야, 안쪽 화면에서도 컨트롤 바가 제대로 나타난다.
+  function attachActivityListeners(doc) {
+    try {
+      doc.addEventListener('mousemove', onActivity);
+      if (document.body.classList.contains('cursor-hidden')) {
+        doc.body.style.setProperty('cursor', 'none', 'important');
+      }
+      for (const f of doc.querySelectorAll('iframe')) {
+        try { attachActivityListeners(f.contentDocument); } catch (e) {}
+      }
+    } catch (e) { /* 접근 불가(다른 출처 등) 시 무시 */ }
   }
 
   function goNext() {
@@ -241,13 +252,22 @@
   // 전체화면일 때 3초간 마우스를 안 움직이면 커서를 숨긴다 (영상 플레이어와 동일한 방식).
   // 현재 보이는 자료가 iframe이라 그 안에서 움직이는 마우스는 따로 감지해줘야 한다.
   let cursorTimer = null;
+  function setCursorRecursive(doc, hidden) {
+    try {
+      doc.body.style.cursor = hidden ? 'none' : '';
+      if (hidden) doc.body.style.setProperty('cursor', 'none', 'important');
+      for (const f of doc.querySelectorAll('iframe')) {
+        try { setCursorRecursive(f.contentDocument, hidden); } catch (e) {}
+      }
+    } catch (e) {}
+  }
   function showCursor() {
     document.body.classList.remove('cursor-hidden');
-    try { frame.contentDocument.body.style.cursor = ''; } catch (e) {}
+    setCursorRecursive(frame.contentDocument, false);
   }
   function hideCursor() {
     document.body.classList.add('cursor-hidden');
-    try { frame.contentDocument.body.style.setProperty('cursor', 'none', 'important'); } catch (e) {}
+    setCursorRecursive(frame.contentDocument, true);
   }
   function resetCursorTimer() {
     showCursor();
