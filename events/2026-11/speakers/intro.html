@@ -35,5 +35,16 @@
     </div>
   </div>
   <div class="brand">IOTRUST</div>
+
+<script>
+  function goNext() { parent.postMessage({ hubNav: 'next' }, '*'); }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Enter', 'Backspace'].includes(e.key)) {
+      e.preventDefault();
+      goNext();
+    }
+  });
+  document.addEventListener('click', goNext);
+</script>
 </body>
 </html>

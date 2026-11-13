@@ -60,7 +60,8 @@
 
   function goTo(num) {
     if (!pdfDoc || rendering) return;
-    if (num < 1 || num > pdfDoc.numPages) return;
+    if (num < 1) { parent.postMessage({ hubNav: 'prev' }, '*'); return; }
+    if (num > pdfDoc.numPages) { parent.postMessage({ hubNav: 'next' }, '*'); return; }
     pageNum = num;
     renderPage(pageNum);
   }
@@ -78,8 +79,8 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { goTo(pageNum + 1); e.preventDefault(); }
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { goTo(pageNum - 1); e.preventDefault(); }
+    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) { goTo(pageNum + 1); e.preventDefault(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { goTo(pageNum - 1); e.preventDefault(); }
   });
 
   document.addEventListener('click', (e) => {
