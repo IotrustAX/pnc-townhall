@@ -21,18 +21,18 @@
   #speakerList { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
   .speaker-row {
     background: #1b1e24; border: 1px solid #2a2e37; border-radius: 10px; padding: 14px;
-    display: flex; flex-direction: column; gap: 10px; position: relative;
+    display: flex; align-items: center; gap: 10px; position: relative;
   }
-  .speaker-row .top { display: flex; align-items: center; gap: 10px; }
-  .speaker-row .num { color: #7fd1c5; font-weight: 700; font-size: 14px; width: 20px; flex-shrink: 0; }
-  .speaker-row input[type="text"] { flex: 1; }
+  .speaker-row .num { color: #7fd1c5; font-weight: 700; font-size: 14px; width: 16px; flex-shrink: 0; }
+  .speaker-row input[type="text"] { flex: 1; min-width: 0; }
   .speaker-row .remove {
-    background: transparent; border: 0; color: #888; cursor: pointer; font-size: 18px; padding: 2px 6px;
+    background: transparent; border: 0; color: #888; cursor: pointer; font-size: 18px; padding: 2px 6px; flex-shrink: 0;
   }
   .speaker-row .remove:hover { color: #e55; }
   .file-input {
-    display: block; width: 100%; box-sizing: border-box; background: #14161a; border: 1px dashed #333a44;
+    display: block; flex: 2; min-width: 0; box-sizing: border-box; background: #14161a; border: 1px dashed #333a44;
     border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #9aa; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .file-input.has-file { color: #cde; border-style: solid; border-color: #2F7A7A; }
   .file-input.dragover { border-color: #7fd1c5; background: #17241f; color: #cde; }
@@ -101,15 +101,13 @@
     row.className = 'speaker-row';
     row.dataset.index = i;
     row.innerHTML =
-      '<div class="top">' +
-        '<span class="num">' + (speakerList.children.length + 1) + '</span>' +
-        '<input type="text" placeholder="연사 이름" class="speaker-name">' +
-        '<button type="button" class="remove" title="삭제">✕</button>' +
-      '</div>' +
+      '<span class="num">' + (speakerList.children.length + 1) + '</span>' +
+      '<input type="text" placeholder="연사 이름" class="speaker-name">' +
       '<label class="file-input">' +
         '<span class="file-label">클릭해서 선택하거나, 파일을 끌어다 놓으세요</span>' +
         '<input type="file" accept=".pdf,.html" class="speaker-file" style="display:none">' +
-      '</label>';
+      '</label>' +
+      '<button type="button" class="remove" title="삭제">✕</button>';
 
     row.querySelector('.remove').addEventListener('click', () => {
       row.remove();
